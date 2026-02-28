@@ -1,0 +1,16 @@
+name: TeamDeathmatch
+version: 1.0.0
+main: com.tdm.TeamDeathmatchPlugin
+api-version: '1.21'
+author: YourName
+description: Team Deathmatch plugin supporting 4v4 and 10‑team free‑for‑all modes with admin team toggling
+
+commands:
+  tdm:
+    description: Main TDM command
+    usage: /tdm <activate|join|start|end|setspawn|gui>
+
+permissions:
+  tdm.admin:
+    description: Admin commands
+    default: op

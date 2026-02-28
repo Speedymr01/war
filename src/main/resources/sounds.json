@@ -1,0 +1,26 @@
+{
+  "tdm.kill": {
+    "sounds": [
+      {
+        "name": "tdm/kill",
+        "stream": false
+      }
+    ]
+  },
+  "tdm.assist": {
+    "sounds": [
+      {
+        "name": "tdm/assist",
+        "stream": false
+      }
+    ]
+  },
+  "tdm.victory": {
+    "sounds": [
+      {
+        "name": "tdm/victory",
+        "stream": false
+      }
+    ]
+  }
+}

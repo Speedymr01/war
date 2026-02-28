@@ -1,0 +1,274 @@
+# TeamDeathmatch Plugin Configuration
+
+# Game settings
+game:
+  # Number of kills needed to win a game
+  wins-needed: 3
+  
+  # Respawn countdown time in seconds
+  respawn-time: 5
+  
+  # Maximum duration of a game in minutes (0 = no limit)
+  max-duration: 0
+  
+  # Minimum players required to start a game
+  min-players: 2
+  
+  # Maximum players allowed in the game
+  max-players: 20
+  
+  # Enable automatic game start when min-players is reached
+  auto-start: false
+  
+  # Time before game auto-starts after activation (in seconds, 0 = disabled)
+  auto-start-delay: 0
+  
+  # Enable team balancing (auto-move players if teams are unbalanced)
+  auto-balance-teams: false
+  
+  # Maximum team size difference before balancing
+  max-team-difference: 2
+
+# Team settings (FFA supports up to 10 colour teams; admins can toggle these on/off)
+teams:
+  enabled:
+    red: true
+    blue: true
+    green: false
+    yellow: false
+    purple: false
+    orange: false
+    aqua: false
+    gray: false
+    white: false
+    black: false
+
+# Spawn locations for each team (populated by /tdm setspawn <team>)
+spawns: {}
+
+# Scoring settings
+scoring:
+  kill-points: 20
+  assist-points: 10
+  headshot-bonus: 5
+  kill-message: "+%points% ⚔ KILL"
+  assist-message: "+%points% ⭐ ASSIST"
+  headshot-message: "+%points% 💢 HEADSHOT"
+
+# Respawn settings
+respawn:
+  # Show countdown in chat
+  show-countdown: true
+  # Show title on respawn
+  show-title: true
+  # Time to show respawn title in milliseconds
+  title-duration: 1000
+  # Invulnerability time after respawn in seconds
+  invulnerability-time: 0
+  # Heal players on respawn
+  heal-on-respawn: true
+  # Reset hunger on respawn
+  reset-hunger-on-respawn: true
+
+# Game rules
+rules:
+  # Allow friendly fire (team damage)
+  friendly-fire: false
+  # Allow players to damage themselves
+  self-damage: false
+  # Keep players in spectator mode until respawn
+  spectator-death: true
+  # Enable fall damage
+  fall-damage: true
+  # Enable void damage
+  void-damage: true
+  # Enable fire damage
+  fire-damage: true
+  # Enable projectile damage
+  projectile-damage: true
+  # Enable melee damage
+  melee-damage: true
+  # Allow players to leave mid-game
+  allow-mid-game-leave: false
+
+# Damage multipliers
+damage:
+  # Multiply all damage by this value (1.0 = normal)
+  global-damage-multiplier: 1.0
+  # Multiply fall damage
+  fall-damage-multiplier: 1.0
+  # Multiply fire damage
+  fire-damage-multiplier: 1.0
+  # Multiply projectile damage
+  projectile-damage-multiplier: 1.0
+  # Multiply melee damage
+  melee-damage-multiplier: 1.0
+
+# Knockback settings
+knockback:
+  # Global knockback multiplier
+  knockback-multiplier: 1.0
+  # Knockback per damage point
+  knockback-per-damage: 1.0
+
+# Feature toggles
+features:
+  enable-sounds: true
+  enable-class-selection: true
+  enable-chat-announcements: true
+  enable-titles: true
+  enable-action-bar-updates: false
+  enable-kill-messages: true
+  enable-death-messages: true
+  enable-team-chat: false
+  enable-kill-streaks: true
+  enable-achievements: true
+
+# Mechanics settings
+mechanics:
+  # Fraction of the entity bounding box that is considered the "head" region.
+  # Value must be between 0.0 and 1.0. 0.25 means the top 25% is the head.
+  head-region-percentage: 0.20
+
+# Sound settings
+sounds:
+  # Enable/disable specific sounds
+  death-sound: true
+  kill-sound: true
+  game-start-sound: true
+  respawn-sound: true
+  assist-sound: true
+  victory-sound: true
+  defeat-sound: true
+  headshot-sound: true
+  
+  # Custom sound volumes (0.0 - 1.0)
+  sound-volume: 1.0
+  # Custom sound pitches (0.5 - 2.0)
+  sound-pitch: 1.0
+
+# Kill streak settings
+kill-streaks:
+  # Enable kill streak tracking
+  enabled: true
+  # Announce at every X kills
+  announce-interval: 5
+  # Broadcast kill streaks to all players
+  broadcast-streaks: true
+  # Messages for kill streaks
+  messages:
+    3-kill-streak: "%player% is on a 3 kill streak!"
+    5-kill-streak: "%player% is on a 5 kill streak!"
+    10-kill-streak: "%player% is DOMINATING with 10 kills!"
+    kill-streak-ended: "%player%'s kill streak of %kills% was ended!"
+
+# Class settings
+classes:
+  sharpshooter:
+    enabled: true
+    name: "Sharpshooter"
+    helmet: LEATHER_HELMET
+    chestplate: LEATHER_CHESTPLATE
+    leggings: LEATHER_LEGGINGS
+    boots: LEATHER_BOOTS
+    weapon: BOW
+    extra-items:
+      - "ARROW:20"
+      
+  berserker:
+    enabled: true
+    name: "Berserker"
+    helmet: CHAINMAIL_HELMET
+    chestplate: CHAINMAIL_CHESTPLATE
+    leggings: CHAINMAIL_LEGGINGS
+    boots: CHAINMAIL_BOOTS
+    weapon: IRON_AXE
+    off-hand: SHIELD
+    health-bonus: 0
+    
+  knight:
+    enabled: true
+    name: "Knight"
+    helmet: IRON_HELMET
+    chestplate: IRON_CHESTPLATE
+    leggings: IRON_LEGGINGS
+    boots: IRON_BOOTS
+    weapon: IRON_SWORD
+    off-hand: SHIELD
+    armor-bonus: 0
+    
+  glass-cannon:
+    enabled: true
+    name: "Glass Cannon"
+    helmet: "NONE"
+    weapon: CROSSBOW
+    extra-items:
+      - "TIPPED_ARROW:3"
+      - "ARROW:10"
+    enchantments:
+      - "CROSSBOW:QUICK_CHARGE:2"
+    health-penalty: 0
+
+# Chat messages
+messages:
+  game-activated: "Match activated! Players can now join with /tdm join [red/blue]"
+  game-started: "Match started!"
+  game-ended: "Match ended!"
+  player-joined: "joined the game"
+  player-left: "left the game"
+  respawn-soon: "You are now spectating. Respawning in %time%s..."
+  no-permission: "No permission!"
+  not-in-game: "You're not in an active game!"
+  team-full: "That team is full!"
+  cannot-join-mid-game: "You cannot join a game that has already started!"
+  game-announcement: "[TDM] %message%"
+  
+# Scoreboard settings
+scoreboard:
+  # Enable scoreboard display
+  enabled: true
+  # Update interval in ticks (20 ticks = 1 second)
+  update-interval: 20
+  # Show kills/deaths/assists
+  show-player-stats: true
+  # Show team scores
+  show-team-scores: true
+  # Show remaining time
+  show-game-time: false
+  
+# Database settings (for future use)
+database:
+  enabled: false
+  type: "sqlite"
+  # Host for MySQL
+  host: "localhost"
+  # Port for MySQL
+  port: 3306
+  # Database name
+  name: "teamdeathmatch"
+  # Username
+  user: "root"
+  # Password
+  password: "password"
+  
+# Performance settings
+performance:
+  # Enable entity cleanup
+  cleanup-entities: true
+  # Cleanup interval in seconds
+  cleanup-interval: 60
+  # Maximum particles per kill
+  max-particles: 100
+  # Use async event processing
+  async-events: false
+  
+# Debug settings
+debug:
+  # Enable debug mode
+  enabled: false
+  # Log all events
+  log-events: false
+  # Log command usage
+  log-commands: false
+  # Show performance metrics
+  show-metrics: false

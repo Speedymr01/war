@@ -1,0 +1,16 @@
+com\tdm\GameManager$1.class
+com\tdm\TeamDeathmatchPlugin.class
+com\tdm\GameManager$2.class
+com\tdm\SpawnManager.class
+com\tdm\GameManager$Team.class
+com\tdm\PlayerClass.class
+com\tdm\AdminGUI.class
+com\tdm\GameListener.class
+com\tdm\GameManager$GameMode.class
+com\tdm\JoinCommand.class
+com\tdm\TDMCommand.class
+com\tdm\ClassSelectionGUI.class
+com\tdm\GameManager.class
+com\tdm\SoundManager.class
+com\tdm\HeadshotDetector.class
+com\tdm\GameManager$3.class
