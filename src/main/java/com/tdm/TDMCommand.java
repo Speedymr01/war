@@ -28,7 +28,7 @@ public class TDMCommand implements CommandExecutor, TabCompleter {
         Player player = (Player) sender;
 
         if (args.length == 0) {
-            player.sendMessage(Component.text("Usage: /tdm <activate|join|start|end|setspawn|gui>", NamedTextColor.YELLOW));
+            player.sendMessage(Component.text("Usage: /tdm <activate|join|start|end|setspawn|gui|reload>", NamedTextColor.YELLOW));
             return true;
         }
 
@@ -173,6 +173,20 @@ public class TDMCommand implements CommandExecutor, TabCompleter {
                 }
                 AdminGUI.openAdminGUI(player);
                 break;
+                
+            case "reload":
+                if (!player.hasPermission("tdm.admin")) {
+                    player.sendMessage(Component.text("No permission!", NamedTextColor.RED));
+                    return true;
+                }
+                
+                // Reload config and classes
+                gameManager.getPlugin().reloadConfig();
+                PlayerClass.loadClassesFromConfig(gameManager.getPlugin().getConfig().getConfigurationSection("classes"));
+                spawnManager.reloadSpawns();
+                
+                player.sendMessage(Component.text("Config reloaded! Loaded " + PlayerClass.getAllClasses().size() + " classes.", NamedTextColor.GREEN));
+                break;
 
             default:
                 player.sendMessage(Component.text("Unknown subcommand!", NamedTextColor.RED));
@@ -189,7 +203,7 @@ public class TDMCommand implements CommandExecutor, TabCompleter {
         if (args.length == 1) {
             // First argument - subcommands
             String input = args[0].toLowerCase();
-            for (String subcmd : new String[]{"activate", "join", "start", "end", "setspawn", "gui"}) {
+            for (String subcmd : new String[]{"activate", "join", "start", "end", "setspawn", "gui", "reload"}) {
                 if (subcmd.startsWith(input)) {
                     completions.add(subcmd);
                 }

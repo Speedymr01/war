@@ -25,7 +25,13 @@ public class GameManager {
     // recent headshot: victim -> (damager, timestamp)
     private final Map<UUID, UUID> recentHeadshotBy = new HashMap<>();
     private final Map<UUID, Long> recentHeadshotTime = new HashMap<>();
-    private final Map<UUID, Long> lastDamagers = new HashMap<>();
+    // Track last damager per victim: victim -> damager UUID
+    private final Map<UUID, UUID> lastDamagerBy = new HashMap<>();
+    // Track last damage time per victim: victim -> timestamp
+    private final Map<UUID, Long> lastDamagerTime = new HashMap<>();
+    // keep the previous damager in case a final hit overwrote a potential assister
+    private final Map<UUID, UUID> prevDamagerBy = new HashMap<>();
+    private final Map<UUID, Long> prevDamagerTime = new HashMap<>();
     
     // score per team (used for win tracking)
     private final Map<Team, Integer> teamScores = new HashMap<>();
@@ -42,6 +48,14 @@ public class GameManager {
 
     // Game mode
     private GameMode currentGameMode = GameMode.FREE_FOR_ALL;
+    
+    // Task tracking for cleanup on reload
+    private org.bukkit.scheduler.BukkitTask scoreboardTask = null;
+    private org.bukkit.scheduler.BukkitTask autoStartTask = null;
+    private org.bukkit.scheduler.BukkitTask classSelectionCheckTask = null;
+    
+    // Players who must select a class during game
+    private final Set<UUID> playersNeedingClassSelection = new HashSet<>();
     
     // Config values
     private int winsNeeded;
@@ -154,6 +168,9 @@ public class GameManager {
         playerKills.put(player.getUniqueId(), 0);
         playerAssists.put(player.getUniqueId(), 0);
         
+        // Update nametag color
+        updatePlayerNametagColor(player, team);
+        
         player.sendMessage(Component.text("You joined ", NamedTextColor.GRAY)
             .append(Component.text(team.getDisplayName(), team.getColor())));
         
@@ -178,11 +195,38 @@ public class GameManager {
 
     public void setPlayerClass(Player player, PlayerClass playerClass) {
         playerClasses.put(player.getUniqueId(), playerClass);
-        player.sendMessage(Component.text("Class selected: " + playerClass.name(), NamedTextColor.GREEN));
+        player.sendMessage(Component.text("Class selected: " + playerClass.getName(), NamedTextColor.GREEN));
     }
 
     public void startGame() {
         if (!gameActive || gameStarted) {
+            return;
+        }
+        
+        // Check if there are any players
+        if (playerTeams.isEmpty()) {
+            Bukkit.broadcast(Component.text("Cannot start game: No players have joined!", NamedTextColor.RED));
+            return;
+        }
+        
+        // Check if spawns are set for active teams
+        boolean hasValidSpawns = false;
+        if (currentGameMode == GameMode.FREE_FOR_ALL) {
+            // Check if at least one enabled team has a spawn
+            for (Team team : enabledFfaTeams) {
+                if (spawnManager.getSpawn(team, currentGameMode) != null) {
+                    hasValidSpawns = true;
+                    break;
+                }
+            }
+        } else {
+            // For other modes, check red and blue
+            hasValidSpawns = spawnManager.getSpawn(Team.RED, currentGameMode) != null 
+                          && spawnManager.getSpawn(Team.BLUE, currentGameMode) != null;
+        }
+        
+        if (!hasValidSpawns) {
+            Bukkit.broadcast(Component.text("Cannot start game: No spawn points set! Use /tdm admin to set spawns.", NamedTextColor.RED));
             return;
         }
         
@@ -193,15 +237,27 @@ public class GameManager {
             teamScores.put(t, 0);
         }
         
+        playersNeedingClassSelection.clear();
+        
         for (UUID uuid : playerTeams.keySet()) {
             Player player = Bukkit.getPlayer(uuid);
             if (player != null) {
-                respawnPlayer(player);
-                if (enableSounds) {
-                    SoundManager.playGameStartSound(player);
+                // If player hasn't selected a class, open GUI and track them
+                if (playerClasses.get(uuid) == null) {
+                    playersNeedingClassSelection.add(uuid);
+                    ClassSelectionGUI.openClassSelection(player, this);
+                    player.sendMessage(Component.text("Please select a class to continue!", NamedTextColor.YELLOW));
+                } else {
+                    respawnPlayer(player);
+                    if (enableSounds) {
+                        SoundManager.playGameStartSound(player);
+                    }
                 }
             }
         }
+        
+        // Start task to reopen GUI for players who close it without selecting
+        startClassSelectionCheckTask();
         
         startScoreboardUpdater();
         
@@ -211,6 +267,21 @@ public class GameManager {
     public void endGame() {
         gameActive = false;
         gameStarted = false;
+        
+        // Cancel any running tasks
+        if (scoreboardTask != null) {
+            scoreboardTask.cancel();
+            scoreboardTask = null;
+        }
+        if (autoStartTask != null) {
+            autoStartTask.cancel();
+            autoStartTask = null;
+        }
+        if (classSelectionCheckTask != null) {
+            classSelectionCheckTask.cancel();
+            classSelectionCheckTask = null;
+        }
+        playersNeedingClassSelection.clear();
         forceAutoAssignThisGame = false; // clear runtime assignment forcing when game ends
         
         // determine winner by highest score
@@ -279,15 +350,19 @@ public class GameManager {
         playerKills.clear();
         playerAssists.clear();
         playerHeadshots.clear();
-        lastDamagers.clear();
-        // reset scoreboards
+        lastDamagerBy.clear();
+        lastDamagerTime.clear();
+        // reset scoreboards and nametag colors
         for (Player p : Bukkit.getOnlinePlayers()) {
             p.setScoreboard(Bukkit.getScoreboardManager().getNewScoreboard());
+            clearPlayerNametagColor(p);
         }
     }
 
-    public void handleDeath(Player player, Player killer) {
+    public void handleDeath(Player player, Player killer, org.bukkit.event.entity.EntityDamageEvent.DamageCause cause) {
+        plugin.getLogger().info("[DEBUG] DEATH HANDLER CALLED: player=" + player.getName() + ", killer=" + (killer != null ? killer.getName() : "null") + ", cause=" + cause);
         Team team = playerTeams.get(player.getUniqueId());
+        plugin.getLogger().info("[DEBUG] DEATH: victim team=" + team);
         
         if (enableSounds) {
             SoundManager.playDeathSound(player);
@@ -299,6 +374,31 @@ public class GameManager {
                 .replace("%time%", String.valueOf(respawnTime));
         player.sendMessage(Component.text(respawnMsg, NamedTextColor.GRAY));
         
+        // Broadcast death message
+        Component deathMessage;
+        if (killer != null) {
+            NamedTextColor victimColor = team != null ? team.getColor() : NamedTextColor.RED;
+            Team killerTeam = playerTeams.get(killer.getUniqueId());
+            NamedTextColor killerColor = killerTeam != null ? killerTeam.getColor() : NamedTextColor.RED;
+            deathMessage = Component.text(player.getName(), victimColor)
+                    .append(Component.text(" was killed by ", NamedTextColor.GRAY))
+                    .append(Component.text(killer.getName(), killerColor));
+        } else {
+            // Environmental death
+            NamedTextColor victimColor = team != null ? team.getColor() : NamedTextColor.RED;
+            String causeName = cause != null ? cause.name().replace("_", " ").toLowerCase() : "unknown";
+            deathMessage = Component.text(player.getName(), victimColor)
+                    .append(Component.text(" died to ", NamedTextColor.GRAY))
+                    .append(Component.text(causeName, NamedTextColor.GOLD));
+        }
+        
+        // Send to all players
+        for (Player onlinePlayer : Bukkit.getOnlinePlayers()) {
+            if (isPlayerInGame(onlinePlayer.getUniqueId())) {
+                onlinePlayer.sendMessage(deathMessage);
+            }
+        }
+        
         if (killer != null && playerTeams.containsKey(killer.getUniqueId())) {
             Team killerTeam = playerTeams.get(killer.getUniqueId());
             if (killerTeam != null && !killerTeam.equals(team)) {
@@ -309,47 +409,77 @@ public class GameManager {
                 playerKills.put(killer.getUniqueId(), playerKills.getOrDefault(killer.getUniqueId(), 0) + 1);
                 addPoints(killer.getUniqueId(), killPoints);
 
-                // Check for recent headshot on this victim by this killer (within 5s)
+                // Check if the killing blow was a headshot
                 UUID recentBy = recentHeadshotBy.get(player.getUniqueId());
-                Long recentTime = recentHeadshotTime.get(player.getUniqueId());
-                if (recentBy != null && recentTime != null && recentBy.equals(killer.getUniqueId())) {
-                    long age = System.currentTimeMillis() - recentTime;
-                    if (age <= 5000) {
-                        // award headshot bonus
-                        addPoints(killer.getUniqueId(), headshotBonus);
-                        killer.sendMessage(Component.text(plugin.getConfig().getString("scoring.headshot-message", "+%points% 💢 HEADSHOT").replace("%points%", String.valueOf(headshotBonus)), NamedTextColor.AQUA));
-                        if (enableSounds) {
-                            SoundManager.playHeadshotSound(killer);
-                        }
+                
+                if (recentBy != null && recentBy.equals(killer.getUniqueId())) {
+                    // award headshot bonus - killing blow was a headshot
+                    recordHeadshot(killer.getUniqueId());
+                    addPoints(killer.getUniqueId(), headshotBonus);
+                    killer.sendMessage(Component.text(plugin.getConfig().getString("scoring.headshot-message", "+%points% 💢 HEADSHOT").replace("%points%", String.valueOf(headshotBonus)), NamedTextColor.AQUA));
+                    if (enableSounds) {
+                        SoundManager.playHeadshotSound(killer);
                     }
                 }
 
                 // Clear recent headshot tracking for victim
                 clearRecentHeadshot(player.getUniqueId());
 
-                UUID assister = findAssister(player.getUniqueId(), killer.getUniqueId());
-                if (assister != null) {
-                    playerAssists.put(assister, playerAssists.getOrDefault(assister, 0) + 1);
-                    addPoints(assister, assistPoints);
-                    Player assistPlayer = Bukkit.getPlayer(assister);
-                    if (assistPlayer != null) {
-                        String assistMsg = plugin.getConfig().getString("scoring.assist-message", "+%points% ⭐ ASSIST")
-                                .replace("%points%", String.valueOf(assistPoints));
-                        assistPlayer.sendMessage(Component.text(assistMsg, NamedTextColor.YELLOW));
-                        if (enableSounds) {
-                            SoundManager.playAssistSound(assistPlayer);
-                        }
+                // now handle kill award if we have a killer, regardless of damage type
+                if (killer != null && killerTeam != null && !killerTeam.equals(team)) {
+                    String killMsg = plugin.getConfig().getString("scoring.kill-message", "+%points% ⚔ KILL")
+                            .replace("%points%", String.valueOf(killPoints));
+                    killer.sendMessage(Component.text(killMsg, NamedTextColor.GREEN));
+                    plugin.getLogger().info("[DEBUG] Assist: KILL AWARDED to " + killer.getUniqueId() + " with cause " + cause);
+                    if (enableSounds) {
+                        SoundManager.playKillSound(killer);
                     }
-                }
-
-                String killMsg = plugin.getConfig().getString("scoring.kill-message", "+%points% ⚔ KILL")
-                        .replace("%points%", String.valueOf(killPoints));
-                killer.sendMessage(Component.text(killMsg, NamedTextColor.GREEN));
-                if (enableSounds) {
-                    SoundManager.playKillSound(killer);
                 }
             }
         }
+        
+        // Determine assister before clearing damage tracking (run for all deaths, regardless of killer)
+        UUID assister = findAssister(player.getUniqueId(), killer != null ? killer.getUniqueId() : null);
+        
+        // clear damage tracking for victim now that they are dead
+        lastDamagerBy.remove(player.getUniqueId());
+        lastDamagerTime.remove(player.getUniqueId());
+        prevDamagerBy.remove(player.getUniqueId());
+        prevDamagerTime.remove(player.getUniqueId());
+
+        // award assist if we have a valid assister and it is not the killer
+        if (assister != null) {
+            plugin.getLogger().info("[DEBUG] Assist: Found assister = " + assister);
+            if (!assister.equals(killer != null ? killer.getUniqueId() : null)) {
+                plugin.getLogger().info("[DEBUG] Assist: Assister differs from killer, AWARDING ASSIST TO " + assister);
+                playerAssists.put(assister, playerAssists.getOrDefault(assister, 0) + 1);
+                addPoints(assister, assistPoints);
+                
+                Player assistPlayer = Bukkit.getPlayer(assister);
+                if (assistPlayer != null) {
+                    String assistMsg = plugin.getConfig().getString("scoring.assist-message", "+%points% ⭐ ASSIST")
+                            .replace("%points%", String.valueOf(assistPoints));
+                    assistPlayer.sendMessage(Component.text(assistMsg, NamedTextColor.YELLOW));
+                    if (enableSounds) {
+                        SoundManager.playAssistSound(assistPlayer);
+                    }
+                }
+            } else {
+                plugin.getLogger().info("[DEBUG] Assist: Assister equals killer (" + assister + "), not awarding assist (they get kill instead)");
+            }
+            
+            // Award team point for assist if no killer (environmental death)
+            if (killer == null) {
+                Team assisterTeam = playerTeams.get(assister);
+                if (assisterTeam != null && !assisterTeam.equals(playerTeams.get(player.getUniqueId()))) {
+                    teamScores.put(assisterTeam, teamScores.getOrDefault(assisterTeam, 0) + 1);
+                    plugin.getLogger().info("[DEBUG] Assist: Team " + assisterTeam + " score incremented for environmental kill");
+                }
+            }
+        } else {
+            plugin.getLogger().info("[DEBUG] Assist: No assister found");
+        }
+
         // check any team reached win threshold
         for (int score : teamScores.values()) {
             if (score >= winsNeeded) {
@@ -362,7 +492,20 @@ public class GameManager {
     }
 
     public void recordDamage(UUID victim, UUID damager) {
-        lastDamagers.put(victim, System.currentTimeMillis());
+        if (victim == null || damager == null) return;
+        UUID current = lastDamagerBy.get(victim);
+        Long currentTime = lastDamagerTime.get(victim);
+        if (current != null && currentTime != null) {
+            // if the new hit is from a different player we push the old entry to 'previous'
+            if (!current.equals(damager)) {
+                prevDamagerBy.put(victim, current);
+                prevDamagerTime.put(victim, currentTime);
+                plugin.getLogger().info("[DEBUG] Assist: Recording damage - victim=" + victim + ", new damager=" + damager + ", previous damager moved=" + current);
+            }
+        }
+        lastDamagerBy.put(victim, damager);
+        lastDamagerTime.put(victim, System.currentTimeMillis());
+        plugin.getLogger().info("[DEBUG] Assist: Last damager updated - victim=" + victim + ", damager=" + damager);
     }
     
     public void recordHeadshot(UUID damager) {
@@ -424,24 +567,70 @@ public class GameManager {
     }
 
     private UUID findAssister(UUID victim, UUID killer) {
-        long currentTime = System.currentTimeMillis();
-        Long lastDamageTime = lastDamagers.get(victim);
-        
-        if (lastDamageTime != null && (currentTime - lastDamageTime) < 10000) {
+        if (victim == null) return null;
+        UUID lastDamager = lastDamagerBy.get(victim);
+        Long lastDamageTime = lastDamagerTime.get(victim);
+        plugin.getLogger().info("[DEBUG] Assist: findAssister called - victim=" + victim + ", killer=" + killer + ", lastDamager=" + lastDamager);
+        if (lastDamager == null || lastDamageTime == null) {
+            plugin.getLogger().info("[DEBUG] Assist: No last damager found");
             return null;
         }
-        return null;
+        // if the hit happened more than 10 seconds before death, no assist
+        long currentTime = System.currentTimeMillis();
+        long timeSinceDamage = currentTime - lastDamageTime;
+        plugin.getLogger().info("[DEBUG] Assist: Time since damage = " + timeSinceDamage + "ms");
+        if (timeSinceDamage > 10000) {
+            plugin.getLogger().info("[DEBUG] Assist: Damage too old (>10s), no assist");
+            return null;
+        }
+        // if the last damager was the victim themselves, ignore as well
+        if (lastDamager.equals(victim)) {
+            plugin.getLogger().info("[DEBUG] Assist: Last damager is victim, no assist");
+            return null;
+        }
+        // return the last damager - caller will decide if it's an assist or kill based on killer and cause
+        plugin.getLogger().info("[DEBUG] Assist: Returning potential assister = " + lastDamager);
+        return lastDamager;
     }
 
     private void respawnPlayer(Player player) {
         Team team = playerTeams.get(player.getUniqueId());
         PlayerClass playerClass = playerClasses.get(player.getUniqueId());
         
-        if (team == null || playerClass == null) return;
+        if (team == null) {
+            player.sendMessage(Component.text("Error: You are not assigned to a team!", NamedTextColor.RED));
+            return;
+        }
+        
+        // Auto-assign default class if missing
+        if (playerClass == null) {
+            playerClass = PlayerClass.getFirstEnabledClass();
+            if (playerClass == null) {
+                player.sendMessage(Component.text("Error: No classes available! Contact an admin.", NamedTextColor.RED));
+                return;
+            }
+            playerClasses.put(player.getUniqueId(), playerClass);
+            player.sendMessage(Component.text("Auto-assigned class: " + playerClass.getName(), NamedTextColor.YELLOW));
+        }
         
         Location spawn = spawnManager.getSpawn(team, currentGameMode);
         
-        if (spawn == null) return;
+        // Fallback: try to find any available spawn if team spawn is missing
+        if (spawn == null) {
+            player.sendMessage(Component.text("Warning: No spawn set for " + team.getDisplayName() + "! Using fallback.", NamedTextColor.YELLOW));
+            
+            // Try other teams' spawns as fallback
+            for (Team t : Team.values()) {
+                spawn = spawnManager.getSpawn(t, currentGameMode);
+                if (spawn != null) break;
+            }
+            
+            // If still no spawn, use player's current location
+            if (spawn == null) {
+                spawn = player.getLocation();
+                player.sendMessage(Component.text("Error: No spawns configured! Staying at current location.", NamedTextColor.RED));
+            }
+        }
         
         player.teleport(spawn);
         if (healOnRespawn) {
@@ -452,6 +641,9 @@ public class GameManager {
         }
         player.getInventory().clear();
         player.setGameMode(org.bukkit.GameMode.SURVIVAL);
+        
+        // Update nametag color
+        updatePlayerNametagColor(player, team);
         
         playerClass.giveKit(player);
         
@@ -478,11 +670,18 @@ public class GameManager {
     }
 
     private void startScoreboardUpdater() {
-        new BukkitRunnable() {
+        // Cancel existing task if any
+        if (scoreboardTask != null && !scoreboardTask.isCancelled()) {
+            scoreboardTask.cancel();
+        }
+        
+        BukkitRunnable runnable = new BukkitRunnable() {
+            @SuppressWarnings("deprecation")
             @Override
             public void run() {
                 if (!gameStarted) {
                     cancel();
+                    scoreboardTask = null;
                     return;
                 }
 
@@ -495,9 +694,26 @@ public class GameManager {
                     org.bukkit.scoreboard.Objective obj = board.registerNewObjective(
                             "tdm",
                             org.bukkit.scoreboard.Criteria.DUMMY,
-                            Component.text("TDM"),
+                            Component.text("⚔ TDM ⚔", NamedTextColor.GOLD),
                             org.bukkit.scoreboard.RenderType.INTEGER);
                     obj.setDisplaySlot(org.bukkit.scoreboard.DisplaySlot.SIDEBAR);
+                    
+                    // Register team colors on this scoreboard so nametags show colors
+                    for (UUID otherUuid : playerTeams.keySet()) {
+                        Player otherPlayer = Bukkit.getPlayer(otherUuid);
+                        if (otherPlayer != null) {
+                            Team otherTeam = playerTeams.get(otherUuid);
+                            if (otherTeam != null) {
+                                String teamName = "tdm_" + otherTeam.name().toLowerCase();
+                                org.bukkit.scoreboard.Team scoreboardTeam = board.getTeam(teamName);
+                                if (scoreboardTeam == null) {
+                                    scoreboardTeam = board.registerNewTeam(teamName);
+                                    scoreboardTeam.setColor(GameManager.this.getChatColor(otherTeam));
+                                }
+                                scoreboardTeam.addEntry(otherPlayer.getName());
+                            }
+                        }
+                    }
 
                     // compute number of team lines according to mode
                     List<Team> teamsToShow;
@@ -508,22 +724,168 @@ public class GameManager {
                         teamsToShow = Arrays.asList(Team.RED, Team.BLUE);
                     }
                     int line = teamsToShow.size() + 5; // start score index
-                    obj.getScore("TEAM SCORES").setScore(line--);
+                    
+                    // Team scores header with color
+                    String headerEntry = org.bukkit.ChatColor.YELLOW + "TEAM SCORES";
+                    obj.getScore(headerEntry).setScore(line--);
+                    
+                    // Team scores with team colors
                     for (Team t : teamsToShow) {
-                        String entry = t.getDisplayName() + ": " + teamScores.getOrDefault(t, 0) + "/" + winsNeeded;
+                        org.bukkit.ChatColor chatColor = GameManager.this.getChatColor(t);
+                        String entry = chatColor + t.getDisplayName() + ": " + teamScores.getOrDefault(t, 0) + "/" + winsNeeded;
                         obj.getScore(entry).setScore(line--);
                     }
+                    
+                    // Empty line
                     obj.getScore(" ").setScore(line--);
-                    // personal stats
-                    obj.getScore("Your Points: " + playerPoints.getOrDefault(uuid, 0)).setScore(line--);
-                    obj.getScore("Kills: " + playerKills.getOrDefault(uuid, 0)).setScore(line--);
-                    obj.getScore("Assists: " + playerAssists.getOrDefault(uuid, 0)).setScore(line--);
-                    obj.getScore("Headshots: " + playerHeadshots.getOrDefault(uuid, 0)).setScore(line--);
+                    
+                    // Personal stats with colors
+                    String pointsEntry = org.bukkit.ChatColor.GOLD + "Your Points: " + playerPoints.getOrDefault(uuid, 0);
+                    obj.getScore(pointsEntry).setScore(line--);
+                    
+                    String killsEntry = org.bukkit.ChatColor.GREEN + "Kills: " + playerKills.getOrDefault(uuid, 0);
+                    obj.getScore(killsEntry).setScore(line--);
+                    
+                    String assistsEntry = org.bukkit.ChatColor.YELLOW + "Assists: " + playerAssists.getOrDefault(uuid, 0);
+                    obj.getScore(assistsEntry).setScore(line--);
+                    
+                    String headshotsEntry = org.bukkit.ChatColor.AQUA + "Headshots: " + playerHeadshots.getOrDefault(uuid, 0);
+                    obj.getScore(headshotsEntry).setScore(line--);
 
                     player.setScoreboard(board);
                 }
             }
-        }.runTaskTimer(plugin, 0L, 20L);
+        };
+        scoreboardTask = runnable.runTaskTimer(plugin, 0L, 20L);
+    }
+    
+    private void startClassSelectionCheckTask() {
+        // Cancel existing task if any
+        if (classSelectionCheckTask != null && !classSelectionCheckTask.isCancelled()) {
+            classSelectionCheckTask.cancel();
+        }
+        
+        BukkitRunnable runnable = new BukkitRunnable() {
+            @Override
+            public void run() {
+                if (!gameStarted || playersNeedingClassSelection.isEmpty()) {
+                    if (playersNeedingClassSelection.isEmpty()) {
+                        cancel();
+                        classSelectionCheckTask = null;
+                    }
+                    return;
+                }
+                
+                // Check each player who needs to select a class
+                for (UUID uuid : new HashSet<>(playersNeedingClassSelection)) {
+                    Player player = Bukkit.getPlayer(uuid);
+                    if (player == null) {
+                        playersNeedingClassSelection.remove(uuid);
+                        continue;
+                    }
+                    
+                    // If player has now selected a class, remove from set and respawn them
+                    if (playerClasses.containsKey(uuid)) {
+                        playersNeedingClassSelection.remove(uuid);
+                        GameManager.this.respawnPlayer(player);
+                        if (enableSounds) {
+                            SoundManager.playGameStartSound(player);
+                        }
+                    } else {
+                        // Check if player's inventory is closed (not the class selection GUI)
+                        String invTitle = net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText().serialize(player.getOpenInventory().title());
+                        if (!invTitle.equals("Select Your Class")) {
+                            // Player closed the GUI without selecting - reopen it
+                            ClassSelectionGUI.openClassSelection(player, GameManager.this);
+                        }
+                    }
+                }
+            }
+        };
+        classSelectionCheckTask = runnable.runTaskTimer(plugin, 20L, 10L);  // Check every 0.5 seconds
+    }
+    
+    /**
+     * Convert Team NamedTextColor to ChatColor for scoreboard
+     */
+    @SuppressWarnings("deprecation")
+    private org.bukkit.ChatColor getChatColor(Team team) {
+        switch (team) {
+            case RED: return org.bukkit.ChatColor.RED;
+            case BLUE: return org.bukkit.ChatColor.BLUE;
+            case GREEN: return org.bukkit.ChatColor.GREEN;
+            case YELLOW: return org.bukkit.ChatColor.YELLOW;
+            case PURPLE: return org.bukkit.ChatColor.LIGHT_PURPLE;
+            case ORANGE: return org.bukkit.ChatColor.GOLD;
+            case AQUA: return org.bukkit.ChatColor.AQUA;
+            case GRAY: return org.bukkit.ChatColor.GRAY;
+            case WHITE: return org.bukkit.ChatColor.WHITE;
+            case BLACK: return org.bukkit.ChatColor.BLACK;
+            default: return org.bukkit.ChatColor.WHITE;
+        }
+    }
+    
+    /**
+     * Update a player's nametag color to match their team
+     */
+    @SuppressWarnings("deprecation")
+    private void updatePlayerNametagColor(Player player, Team team) {
+        if (player == null || team == null) return;
+        
+        // Update on main scoreboard for all players to see
+        org.bukkit.scoreboard.Scoreboard mainBoard = Bukkit.getScoreboardManager().getMainScoreboard();
+        
+        // Get or create a team for this color on main board
+        String teamName = "tdm_" + team.name().toLowerCase();
+        org.bukkit.scoreboard.Team mainTeam = mainBoard.getTeam(teamName);
+        
+        if (mainTeam == null) {
+            mainTeam = mainBoard.registerNewTeam(teamName);
+            mainTeam.setColor(getChatColor(team));
+        }
+        
+        // Add player to the team on main board
+        mainTeam.addEntry(player.getName());
+        
+        // Also update on all online players' personal scoreboards so they see the color
+        for (Player onlinePlayer : Bukkit.getOnlinePlayers()) {
+            org.bukkit.scoreboard.Scoreboard playerBoard = onlinePlayer.getScoreboard();
+            if (playerBoard != null && playerBoard != mainBoard) {
+                org.bukkit.scoreboard.Team playerTeam = playerBoard.getTeam(teamName);
+                if (playerTeam == null) {
+                    playerTeam = playerBoard.registerNewTeam(teamName);
+                    playerTeam.setColor(getChatColor(team));
+                }
+                playerTeam.addEntry(player.getName());
+            }
+        }
+    }
+    
+    /**
+     * Remove a player's nametag color
+     */
+    private void clearPlayerNametagColor(Player player) {
+        if (player == null) return;
+        
+        // Clear from main scoreboard
+        org.bukkit.scoreboard.Scoreboard mainBoard = Bukkit.getScoreboardManager().getMainScoreboard();
+        for (org.bukkit.scoreboard.Team team : mainBoard.getTeams()) {
+            if (team.getName().startsWith("tdm_")) {
+                team.removeEntry(player.getName());
+            }
+        }
+        
+        // Clear from all players' personal scoreboards
+        for (Player onlinePlayer : Bukkit.getOnlinePlayers()) {
+            org.bukkit.scoreboard.Scoreboard playerBoard = onlinePlayer.getScoreboard();
+            if (playerBoard != null && playerBoard != mainBoard) {
+                for (org.bukkit.scoreboard.Team team : playerBoard.getTeams()) {
+                    if (team.getName().startsWith("tdm_")) {
+                        team.removeEntry(player.getName());
+                    }
+                }
+            }
+        }
     }
 
     public void activateGame() {
@@ -533,16 +895,54 @@ public class GameManager {
         forceAutoAssignThisGame = pendingForceAutoAssign;
         pendingForceAutoAssign = false;
         
+        // Warn admins if spawns are not configured
+        boolean hasSpawns = false;
+        if (currentGameMode == GameMode.FREE_FOR_ALL) {
+            for (Team team : enabledFfaTeams) {
+                if (spawnManager.getSpawn(team, currentGameMode) != null) {
+                    hasSpawns = true;
+                    break;
+                }
+            }
+        } else {
+            hasSpawns = spawnManager.getSpawn(Team.RED, currentGameMode) != null 
+                     && spawnManager.getSpawn(Team.BLUE, currentGameMode) != null;
+        }
+        
+        if (!hasSpawns) {
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                if (p.hasPermission("tdm.admin")) {
+                    p.sendMessage(Component.text("⚠ Warning: No spawn points configured! Set spawns before starting.", NamedTextColor.RED));
+                }
+            }
+        }
+        
+        // Warn if no classes are loaded
+        if (PlayerClass.getAllClasses().isEmpty()) {
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                if (p.hasPermission("tdm.admin")) {
+                    p.sendMessage(Component.text("⚠ Warning: No classes configured in config.yml!", NamedTextColor.RED));
+                }
+            }
+        }
+        
         // Schedule auto-start if enabled
         if (autoStartDelay > 0 && plugin.getConfig().getBoolean("game.auto-start", false)) {
-            new BukkitRunnable() {
+            // Cancel existing auto-start task if any
+            if (autoStartTask != null && !autoStartTask.isCancelled()) {
+                autoStartTask.cancel();
+            }
+            
+            BukkitRunnable runnable = new BukkitRunnable() {
                 @Override
                 public void run() {
                     if (gameActive && !gameStarted) {
                         startGame();
                     }
+                    autoStartTask = null;
                 }
-            }.runTaskLater(plugin, autoStartDelay * 20L);
+            };
+            autoStartTask = runnable.runTaskLater(plugin, autoStartDelay * 20L);
         }
     }
 
@@ -560,13 +960,49 @@ public class GameManager {
 
     public void setPlayerTeam(UUID playerUuid, Team team) {
         if (playerUuid == null || team == null) return;
-        playerTeams.put(playerUuid, team);
+        
         Player p = Bukkit.getPlayer(playerUuid);
+        
+        // Validate team is enabled in FFA mode
+        if (currentGameMode == GameMode.FREE_FOR_ALL && !isTeamEnabled(team)) {
+            if (p != null) {
+                p.sendMessage(Component.text("Cannot move to " + team.getDisplayName() + " - team is not enabled!", NamedTextColor.RED));
+            }
+            // Notify admin who tried to move the player
+            for (Player admin : Bukkit.getOnlinePlayers()) {
+                if (admin.hasPermission("tdm.admin") && !admin.equals(p)) {
+                    admin.sendMessage(Component.text("Cannot move player to " + team.getDisplayName() + " - team is not enabled in FFA mode!", NamedTextColor.RED));
+                }
+            }
+            return;
+        }
+        
+        // Check if team has a spawn point
+        Location spawn = spawnManager.getSpawn(team, currentGameMode);
+        if (spawn == null) {
+            if (p != null) {
+                p.sendMessage(Component.text("Warning: " + team.getDisplayName() + " has no spawn point set!", NamedTextColor.YELLOW));
+            }
+            // Notify admin
+            for (Player admin : Bukkit.getOnlinePlayers()) {
+                if (admin.hasPermission("tdm.admin") && !admin.equals(p)) {
+                    admin.sendMessage(Component.text("Warning: " + team.getDisplayName() + " has no spawn point! Player moved anyway.", NamedTextColor.YELLOW));
+                }
+            }
+        }
+        
+        playerTeams.put(playerUuid, team);
+        
         if (p != null) {
+            // Update nametag color
+            updatePlayerNametagColor(p, team);
             p.sendMessage(Component.text("Your team has been changed to " + team.getDisplayName(), NamedTextColor.GREEN));
             // teleport to team spawn if available
-            Location spawn = spawnManager.getSpawn(team, currentGameMode);
-            if (spawn != null) p.teleport(spawn);
+            if (spawn != null) {
+                p.teleport(spawn);
+            } else {
+                p.sendMessage(Component.text("No spawn available - staying at current location.", NamedTextColor.GRAY));
+            }
         }
     }
 
@@ -628,9 +1064,28 @@ public class GameManager {
     /**
      * Send a broadcast listing available teams to join.
      * Phrase adapts to current mode and enabled teams.
+     * If force auto-assign is active, only shows a single [JOIN] button.
      */
     public void broadcastJoinOptions() {
         if (!gameActive) return;
+        
+        // If force auto-assign is active, only show a single join button
+        if (forceAutoAssignThisGame) {
+            String base;
+            if (currentGameMode == GameMode.FREE_FOR_ALL) {
+                base = "Join the free for all: ";
+            } else {
+                base = "Join the match: ";
+            }
+            Component joinMsg = Component.text(base, NamedTextColor.GREEN)
+                .append(Component.text("[JOIN]", NamedTextColor.GOLD)
+                    .clickEvent(net.kyori.adventure.text.event.ClickEvent.runCommand("/tdm join"))
+                    .hoverEvent(net.kyori.adventure.text.event.HoverEvent.showText(Component.text("Join the match (random team)"))));
+            Bukkit.broadcast(joinMsg);
+            return;
+        }
+        
+        // Normal mode: show team selection options
         String base;
         if (currentGameMode == GameMode.FREE_FOR_ALL) {
             base = "Join the free for all: ";

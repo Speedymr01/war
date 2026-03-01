@@ -5,6 +5,7 @@ com\tdm\SpawnManager.class
 com\tdm\GameManager$Team.class
 com\tdm\PlayerClass.class
 com\tdm\AdminGUI.class
+com\tdm\GameManager$4.class
 com\tdm\GameListener.class
 com\tdm\GameManager$GameMode.class
 com\tdm\JoinCommand.class

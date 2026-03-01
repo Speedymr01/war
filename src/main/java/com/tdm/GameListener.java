@@ -10,11 +10,17 @@ import org.bukkit.entity.Projectile;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
+import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.entity.TNTPrimed;
+import org.bukkit.event.block.Action;
 
 public class GameListener implements Listener {
     private final GameManager gameManager;
@@ -160,6 +166,10 @@ public class GameListener implements Listener {
             ItemStack clicked = (ItemStack) event.getCurrentItem();
             if (clicked == null) return;
             String name = PlainTextComponentSerializer.plainText().serialize(clicked.getItemMeta().displayName());
+            if (name.equals("Back")) {
+                AdminGUI.openAdminGUI(player);
+                return;
+            }
             GameManager.Team t = GameManager.Team.fromString(name);
             if (t != null) {
                 gameManager.toggleFfaTeam(t);
@@ -195,7 +205,7 @@ public class GameListener implements Listener {
             }
             Player target = Bukkit.getPlayer(playerName);
             if (target != null) {
-                AdminGUI.openChangeTeamGUI(player, target);
+                AdminGUI.openChangeTeamGUI(player, target, gameManager);
             }
             return;
         }
@@ -211,7 +221,7 @@ public class GameListener implements Listener {
             }
             Player target = Bukkit.getPlayer(playerName);
             if (target != null) {
-                AdminGUI.openChangeTeamGUI(player, target);
+                AdminGUI.openChangeTeamGUI(player, target, gameManager);
             }
             return;
         }
@@ -245,12 +255,35 @@ public class GameListener implements Listener {
         if (!gameManager.isGameStarted()) return;
         
         Player victim = event.getPlayer();
-        Player killer = victim.getKiller();
+        Player killer = null;
+        org.bukkit.event.entity.EntityDamageEvent last = victim.getLastDamageCause();
+        org.bukkit.event.entity.EntityDamageEvent.DamageCause cause = last != null ? last.getCause() : null;
+        
+        // Only set killer if death was caused by a player-inflicted damage type
+        boolean isPlayerCausedDeath = (cause == org.bukkit.event.entity.EntityDamageEvent.DamageCause.ENTITY_ATTACK
+                || cause == org.bukkit.event.entity.EntityDamageEvent.DamageCause.PROJECTILE
+                || cause == org.bukkit.event.entity.EntityDamageEvent.DamageCause.MAGIC
+                || cause == org.bukkit.event.entity.EntityDamageEvent.DamageCause.ENTITY_EXPLOSION
+                || cause == org.bukkit.event.entity.EntityDamageEvent.DamageCause.BLOCK_EXPLOSION);
+        
+        if (isPlayerCausedDeath && last instanceof org.bukkit.event.entity.EntityDamageByEntityEvent) {
+            org.bukkit.entity.Entity dam = ((org.bukkit.event.entity.EntityDamageByEntityEvent) last).getDamager();
+            // handle direct player damage or indirect via TNT
+            if (dam instanceof Player) {
+                killer = (Player) dam;
+            } else if (dam instanceof TNTPrimed) {
+                TNTPrimed tnt = (TNTPrimed) dam;
+                if (tnt.getSource() instanceof Player) {
+                    killer = (Player) tnt.getSource();
+                }
+            }
+        }
+        // For environmental deaths (FALL, FIRE, etc), killer stays null so last damager gets assist
         
         event.setCancelled(true);
         victim.spigot().respawn();
         
-        gameManager.handleDeath(victim, killer);
+        gameManager.handleDeath(victim, killer, cause);
     }
 
     @EventHandler
@@ -268,7 +301,7 @@ public class GameListener implements Listener {
         Player damager = null;
         boolean isRanged = false;
         
-        // Detect if the damager is a player or a projectile shot by a player
+        // Detect if damager is player, projectile, or primed TNT
         if (event.getDamager() instanceof Player) {
             damager = (Player) event.getDamager();
             isRanged = false;
@@ -277,6 +310,11 @@ public class GameListener implements Listener {
             if (projectile.getShooter() instanceof Player) {
                 damager = (Player) projectile.getShooter();
                 isRanged = true;
+            }
+        } else if (event.getDamager() instanceof TNTPrimed) {
+            TNTPrimed tnt = (TNTPrimed) event.getDamager();
+            if (tnt.getSource() instanceof Player) {
+                damager = (Player) tnt.getSource();
             }
         }
         
@@ -311,18 +349,17 @@ public class GameListener implements Listener {
                 isHeadshot = HeadshotDetector.isMeleeHeadshot(damager, victim, headFraction);
             }
             
-            // Record and announce headshot
+            // Only mark headshot if this damage will kill the player (killing blow)
             if (isHeadshot) {
-                int headshotBonus = gameManager.getHeadshotBonus();
-                gameManager.recordHeadshot(damager.getUniqueId());
-                // mark recent headshot for this victim so kill handling can award bonus
-                gameManager.markRecentHeadshot(victim.getUniqueId(), damager.getUniqueId());
-                damager.sendMessage(Component.text("+%points% 💢 HEADSHOT".replace("%points%", String.valueOf(headshotBonus)), NamedTextColor.AQUA));
+                double damageAmount = event.getFinalDamage();
+                double victimHealth = victim.getHealth();
                 
-                // Play headshot sound if enabled
-                if (gameManager.getPlugin().getConfig().getBoolean("sounds.headshot-sound", true)) {
-                    SoundManager.playHeadshotSound(damager);
+                // Check if this hit will kill the player
+                if (damageAmount >= victimHealth) {
+                    // This is a killing blow headshot - mark it
+                    gameManager.markRecentHeadshot(victim.getUniqueId(), damager.getUniqueId());
                 }
+                // Note: Headshot counter, points, message, and sound are awarded when the kill happens in GameManager
             }
             
             gameManager.recordDamage(victim.getUniqueId(), damager.getUniqueId());
@@ -333,6 +370,47 @@ public class GameListener implements Listener {
     public void onPlayerQuit(PlayerQuitEvent event) {
         if (gameManager.isGameActive()) {
             event.getPlayer().sendMessage(Component.text("You left during an active game!"));
+        }
+    }
+    
+    @EventHandler
+    public void onEntityExplode(EntityExplodeEvent event) {
+        // Check if TNT block damage is disabled
+        if (!gameManager.getPlugin().getConfig().getBoolean("rules.tnt-block-damage", false)) {
+            event.blockList().clear();
+        }
+    }
+
+    @EventHandler
+    public void onBlockPlace(BlockPlaceEvent event) {
+        if (event.getBlock().getType() == org.bukkit.Material.TNT) {
+            Player p = event.getPlayer();
+            // convert to primed TNT and cancel placement
+            event.setCancelled(true);
+            TNTPrimed tnt = p.getWorld().spawn(event.getBlock().getLocation().add(0.5,0,0.5), TNTPrimed.class);
+            tnt.setFuseTicks(80);
+            tnt.setSource(p);
+        }
+    }
+
+    @EventHandler
+    public void onPlayerInteract(PlayerInteractEvent event) {
+        if (event.getAction() == Action.RIGHT_CLICK_BLOCK && event.getClickedBlock() != null
+                && event.getClickedBlock().getType() == org.bukkit.Material.TNT
+                && event.getItem() != null && event.getItem().getType() == org.bukkit.Material.FLINT_AND_STEEL) {
+            Player p = event.getPlayer();
+            event.setCancelled(true);
+            org.bukkit.block.Block b = event.getClickedBlock();
+            b.setType(org.bukkit.Material.AIR);
+            TNTPrimed tnt = p.getWorld().spawn(b.getLocation().add(0.5,0,0.5), TNTPrimed.class);
+            tnt.setFuseTicks(80);
+            tnt.setSource(p);
+            // damage the flint and steel item using Damageable meta
+            ItemStack flint = event.getItem();
+            if (flint != null && flint.getItemMeta() instanceof org.bukkit.inventory.meta.Damageable dmg) {
+                dmg.setDamage(dmg.getDamage() + 1);
+                flint.setItemMeta((ItemMeta)dmg);
+            }
         }
     }
 }

@@ -68,17 +68,43 @@ public class AdminGUI {
         admin.openInventory(inv);
     }
 
-    public static void openChangeTeamGUI(Player admin, Player target) {
+    public static void openChangeTeamGUI(Player admin, Player target, GameManager gameManager) {
         List<GameManager.Team> teams = Arrays.asList(GameManager.Team.values());
         int size = 9 * ((teams.size() + 8) / 9);
         Inventory inv = Bukkit.createInventory(null, size, Component.text("Change Team: " + target.getName()));
         int slot = 0;
         for (GameManager.Team t : teams) {
             Material mat = Material.WHITE_CONCRETE;
-            try {
-                mat = Material.valueOf(t.name() + "_CONCRETE");
-            } catch (IllegalArgumentException ignored) {}
-            ItemStack item = createItem(mat, "Set " + t.getDisplayName());
+            // aqua uses light blue concrete since AQUA_CONCRETE doesn't exist
+            if (t == GameManager.Team.AQUA) {
+                mat = Material.LIGHT_BLUE_CONCRETE;
+            } else {
+                try {
+                    mat = Material.valueOf(t.name() + "_CONCRETE");
+                } catch (IllegalArgumentException ignored) {}
+            }
+            
+            ItemStack item = new ItemStack(mat);
+            ItemMeta meta = item.getItemMeta();
+            meta.displayName(Component.text("Set " + t.getDisplayName(), NamedTextColor.GREEN));
+            
+            // Add lore with warnings
+            List<Component> lore = new ArrayList<>();
+            boolean isEnabled = gameManager.isTeamEnabled(t);
+            boolean hasSpawn = gameManager.getSpawnManager().getSpawn(t, gameManager.getCurrentGameMode()) != null;
+            
+            if (gameManager.getCurrentGameMode() == GameManager.GameMode.FREE_FOR_ALL && !isEnabled) {
+                lore.add(Component.text("⚠ Team not enabled in FFA!", NamedTextColor.RED));
+            }
+            if (!hasSpawn) {
+                lore.add(Component.text("⚠ No spawn point set!", NamedTextColor.YELLOW));
+            }
+            if (lore.isEmpty()) {
+                lore.add(Component.text("Click to move player", NamedTextColor.GRAY));
+            }
+            
+            meta.lore(lore);
+            item.setItemMeta(meta);
             inv.setItem(slot++, item);
             if (slot >= size - 1) break;
         }
@@ -106,9 +132,14 @@ public class AdminGUI {
         int slot = 0;
         for (GameManager.Team t : teams) {
             Material mat = Material.WHITE_CONCRETE;
-            try {
-                mat = Material.valueOf(t.name() + "_CONCRETE");
-            } catch (IllegalArgumentException ignored) {}
+            // aqua uses light blue concrete since AQUA_CONCRETE doesn't exist
+            if (t == GameManager.Team.AQUA) {
+                mat = Material.LIGHT_BLUE_CONCRETE;
+            } else {
+                try {
+                    mat = Material.valueOf(t.name() + "_CONCRETE");
+                } catch (IllegalArgumentException ignored) {}
+            }
             inv.setItem(slot++, createItem(mat, t.getDisplayName()));
         }
         if (size > 0) {
@@ -134,14 +165,14 @@ public class AdminGUI {
         Inventory inv = Bukkit.createInventory(null, size, Component.text("TDM Team Settings"));
         int slot = 0;
         for (GameManager.Team t : GameManager.Team.values()) {
-            Material mat = Material.WHITE_WOOL;
-            // aqua uses light blue wool since aqua and white conflict
+            Material mat = Material.WHITE_CONCRETE;
+            // aqua uses light blue concrete since AQUA_CONCRETE doesn't exist
             if (t == GameManager.Team.AQUA) {
-                mat = Material.LIGHT_BLUE_WOOL;
+                mat = Material.LIGHT_BLUE_CONCRETE;
             } else {
                 try {
-                    // try to pick a wool color matching team color (fallback to white)
-                    mat = Material.valueOf(t.name() + "_WOOL");
+                    // try to pick a concrete color matching team color (fallback to white)
+                    mat = Material.valueOf(t.name() + "_CONCRETE");
                 } catch (IllegalArgumentException ignored) {}
             }
 
@@ -154,6 +185,8 @@ public class AdminGUI {
             item.setItemMeta(meta);
             inv.setItem(slot++, item);
         }
+        // Add back button in last slot
+        inv.setItem(size - 1, createItem(Material.ARROW, "Back"));
         admin.openInventory(inv);
     }
 }

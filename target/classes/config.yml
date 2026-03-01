@@ -3,7 +3,7 @@
 # Game settings
 game:
   # Number of kills needed to win a game
-  wins-needed: 3
+  wins-needed: 30
   
   # Respawn countdown time in seconds
   respawn-time: 5
@@ -90,6 +90,8 @@ rules:
   melee-damage: true
   # Allow players to leave mid-game
   allow-mid-game-leave: false
+  # Allow TNT to damage blocks (set to false to prevent terrain damage)
+  tnt-block-damage: false
 
 # Damage multipliers
 damage:
@@ -142,10 +144,37 @@ sounds:
   defeat-sound: true
   headshot-sound: true
   
+  # Custom sound names (use Minecraft sound names or custom sounds like "tdm.kill")
+  # For custom sounds, place .ogg files in src/main/resources/assets/tdm/sounds/
+  # Then reference them as "tdm.soundname" (e.g., "tdm.kill" for kill.ogg)
+  kill-sound-name: "ENTITY_PLAYER_LEVELUP"
+  assist-sound-name: "ENTITY_EXPERIENCE_ORB_PICKUP"
+  death-sound-name: "ENTITY_PLAYER_DEATH"
+  respawn-sound-name: "ITEM_TOTEM_USE"
+  game-start-sound-name: "ENTITY_ENDER_DRAGON_GROWL"
+  victory-sound-name: "UI_TOAST_CHALLENGE_COMPLETE"
+  defeat-sound-name: "ENTITY_WITHER_SPAWN"
+  headshot-sound-name: "BLOCK_GLASS_BREAK"
+  
   # Custom sound volumes (0.0 - 1.0)
-  sound-volume: 1.0
+  kill-sound-volume: 1.0
+  assist-sound-volume: 1.0
+  death-sound-volume: 1.0
+  respawn-sound-volume: 0.5
+  game-start-sound-volume: 1.0
+  victory-sound-volume: 1.0
+  defeat-sound-volume: 0.5
+  headshot-sound-volume: 1.0
+  
   # Custom sound pitches (0.5 - 2.0)
-  sound-pitch: 1.0
+  kill-sound-pitch: 1.5
+  assist-sound-pitch: 1.2
+  death-sound-pitch: 1.0
+  respawn-sound-pitch: 1.0
+  game-start-sound-pitch: 1.0
+  victory-sound-pitch: 1.0
+  defeat-sound-pitch: 0.8
+  headshot-sound-pitch: 1.8
 
 # Kill streak settings
 kill-streaks:
@@ -167,6 +196,7 @@ classes:
   sharpshooter:
     enabled: true
     name: "Sharpshooter"
+    gui-icon: BOW  # Icon shown in class selection GUI (use "AUTO" to auto-select)
     helmet: LEATHER_HELMET
     chestplate: LEATHER_CHESTPLATE
     leggings: LEATHER_LEGGINGS
@@ -178,6 +208,7 @@ classes:
   berserker:
     enabled: true
     name: "Berserker"
+    gui-icon: IRON_AXE
     helmet: CHAINMAIL_HELMET
     chestplate: CHAINMAIL_CHESTPLATE
     leggings: CHAINMAIL_LEGGINGS
@@ -189,6 +220,7 @@ classes:
   knight:
     enabled: true
     name: "Knight"
+    gui-icon: IRON_SWORD
     helmet: IRON_HELMET
     chestplate: IRON_CHESTPLATE
     leggings: IRON_LEGGINGS
@@ -200,14 +232,97 @@ classes:
   glass-cannon:
     enabled: true
     name: "Glass Cannon"
+    gui-icon: CROSSBOW
     helmet: "NONE"
     weapon: CROSSBOW
     extra-items:
-      - "TIPPED_ARROW:3"
+      - "TIPPED_ARROW:3:HARM:0"
       - "ARROW:10"
     enchantments:
       - "CROSSBOW:QUICK_CHARGE:2"
     health-penalty: 0
+    
+  demolitionist:
+    enabled: true
+    name: "Demolitionist"
+    gui-icon: TNT
+    helmet: LEATHER_HELMET
+    chestplate: LEATHER_CHESTPLATE
+    leggings: LEATHER_LEGGINGS
+    boots: LEATHER_BOOTS
+    weapon: STONE_SWORD
+    extra-items:
+      - "TNT:10"
+    enchantments:
+      - "STONE_SWORD:SHARPNESS:1"
+      
+  tank:
+    enabled: true
+    name: "Tank"
+    gui-icon: DIAMOND_CHESTPLATE
+    helmet: DIAMOND_HELMET
+    chestplate: DIAMOND_CHESTPLATE
+    leggings: DIAMOND_LEGGINGS
+    boots: DIAMOND_BOOTS
+    weapon: STONE_SWORD
+    off-hand: SHIELD
+    health-bonus: 0
+    
+  assassin:
+    enabled: true
+    name: "Assassin"
+    gui-icon: DIAMOND_SWORD
+    helmet: LEATHER_HELMET
+    chestplate: LEATHER_CHESTPLATE
+    leggings: LEATHER_LEGGINGS
+    boots: LEATHER_BOOTS
+    weapon: DIAMOND_SWORD
+    extra-items:
+      - "SPLASH_POTION:2:HARM:1"
+    enchantments:
+      - "DIAMOND_SWORD:SHARPNESS:2"
+      
+  medic:
+    enabled: true
+    name: "Medic"
+    gui-icon: GOLDEN_APPLE
+    helmet: GOLDEN_HELMET
+    chestplate: GOLDEN_CHESTPLATE
+    leggings: GOLDEN_LEGGINGS
+    boots: GOLDEN_BOOTS
+    weapon: IRON_SWORD
+    extra-items:
+      - "GOLDEN_APPLE:3"
+      - "SPLASH_POTION:2:HEAL:0"
+      
+  pyro:
+    enabled: true
+    name: "Pyro"
+    gui-icon: FIRE_CHARGE
+    helmet: CHAINMAIL_HELMET
+    chestplate: CHAINMAIL_CHESTPLATE
+    leggings: CHAINMAIL_LEGGINGS
+    boots: CHAINMAIL_BOOTS
+    weapon: IRON_SWORD
+    extra-items:
+      - "FIRE_CHARGE:16"
+      - "FLINT_AND_STEEL:1"
+    enchantments:
+      - "IRON_SWORD:FIRE_ASPECT:1"
+      
+  scout:
+    enabled: true
+    name: "Scout"
+    gui-icon: FEATHER
+    helmet: LEATHER_HELMET
+    chestplate: LEATHER_CHESTPLATE
+    leggings: LEATHER_LEGGINGS
+    boots: LEATHER_BOOTS
+    weapon: STONE_SWORD
+    extra-items:
+      - "COOKED_BEEF:8"
+    enchantments:
+      - "LEATHER_LEGGINGS:SWIFT_SNEAK:2"
 
 # Chat messages
 messages:

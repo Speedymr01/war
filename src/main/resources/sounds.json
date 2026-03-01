@@ -15,10 +15,50 @@
       }
     ]
   },
+  "tdm.death": {
+    "sounds": [
+      {
+        "name": "tdm/death",
+        "stream": false
+      }
+    ]
+  },
+  "tdm.respawn": {
+    "sounds": [
+      {
+        "name": "tdm/respawn",
+        "stream": false
+      }
+    ]
+  },
+  "tdm.game_start": {
+    "sounds": [
+      {
+        "name": "tdm/game_start",
+        "stream": false
+      }
+    ]
+  },
   "tdm.victory": {
     "sounds": [
       {
         "name": "tdm/victory",
+        "stream": false
+      }
+    ]
+  },
+  "tdm.defeat": {
+    "sounds": [
+      {
+        "name": "tdm/defeat",
+        "stream": false
+      }
+    ]
+  },
+  "tdm.headshot": {
+    "sounds": [
+      {
+        "name": "tdm/headshot",
         "stream": false
       }
     ]

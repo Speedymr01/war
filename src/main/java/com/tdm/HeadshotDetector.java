@@ -30,7 +30,19 @@ public class HeadshotDetector {
         double headRegionHeight = victimMaxY - victimMinY;
         double headRegionStart = victimMaxY - (headRegionHeight * headFraction);
 
-        return projectileLocation.getY() >= headRegionStart;
+        // Check if projectile is within the head region vertically
+        double projectileY = projectileLocation.getY();
+        if (projectileY < headRegionStart || projectileY > victimMaxY) {
+            return false;
+        }
+        
+        // Check if projectile is within the victim's bounding box horizontally (with small tolerance)
+        double tolerance = 0.5; // Allow some margin for hit detection
+        double projectileX = projectileLocation.getX();
+        double projectileZ = projectileLocation.getZ();
+        
+        return projectileX >= victimBox.getMinX() - tolerance && projectileX <= victimBox.getMaxX() + tolerance &&
+               projectileZ >= victimBox.getMinZ() - tolerance && projectileZ <= victimBox.getMaxZ() + tolerance;
     }
 
     public static boolean isMeleeHeadshot(Player attacker, LivingEntity victim, double headFraction) {
@@ -44,19 +56,43 @@ public class HeadshotDetector {
 
         Location eyeLocation = attacker.getEyeLocation();
         Vector lookDirection = eyeLocation.getDirection().normalize();
-        double maxDistance = 3.5;
+        double maxDistance = 4.0; // Slightly increased for better detection
 
+        // Perform raytrace to find hit position
         RayTraceResult result = attacker.getWorld().rayTraceEntities(
             eyeLocation,
             lookDirection,
             maxDistance,
+            0.1, // Ray size - slightly larger for more reliable detection
             entity -> entity.getUniqueId().equals(victim.getUniqueId())
         );
 
         if (result == null || result.getHitEntity() == null) {
+            // Fallback: if raytrace fails but victim is close, check if looking at head height
+            double distance = eyeLocation.distance(victim.getEyeLocation());
+            if (distance <= maxDistance) {
+                // Check if attacker is looking roughly at victim's head level
+                BoundingBox victimBox = victim.getBoundingBox();
+                double victimMinY = victimBox.getMinY();
+                double victimMaxY = victimBox.getMaxY();
+                double headRegionHeight = victimMaxY - victimMinY;
+                double headRegionStart = victimMaxY - (headRegionHeight * headFraction);
+                
+                // Project attacker's look direction and check Y level
+                Vector toVictim = victim.getEyeLocation().toVector().subtract(eyeLocation.toVector());
+                double dotProduct = lookDirection.dot(toVictim.normalize());
+                
+                // If looking at victim (dot product > 0.8 means roughly facing them)
+                if (dotProduct > 0.8) {
+                    // Check if the line from attacker to victim intersects head region
+                    double victimEyeY = victim.getEyeLocation().getY();
+                    return victimEyeY >= headRegionStart;
+                }
+            }
             return false;
         }
 
+        // Use raytrace hit position
         Location hitLocation = result.getHitPosition().toLocation(victim.getWorld());
         BoundingBox victimBox = victim.getBoundingBox();
         double victimMinY = victimBox.getMinY();
