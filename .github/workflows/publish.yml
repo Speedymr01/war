@@ -57,7 +57,7 @@ jobs:
           project: teamdeathmatch
           version: ${{ github.ref_name }}
           files: |
-            ${{ steps.findjar.outputs.jar }}
+            plugin/${{ steps.findjar.outputs.jar }}
 
 
   github-release:
