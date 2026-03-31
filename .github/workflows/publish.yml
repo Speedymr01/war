@@ -40,6 +40,8 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: plugin
+          path: plugin
+
 
       - name: Find JAR file
         id: findjar
@@ -63,6 +65,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: plugin
+          path: plugin
 
       - name: Find JAR file
         id: findjar
