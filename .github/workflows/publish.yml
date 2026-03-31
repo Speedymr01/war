@@ -31,29 +31,29 @@ jobs:
           name: plugin
           path: target/*.jar
 
- publish-modrinth:
-  runs-on: ubuntu-latest
-  needs: build
+  publish-modrinth:
+    runs-on: ubuntu-latest
+    needs: build
 
-  steps:
-    - name: Download artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: plugin
-        path: plugin
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: plugin
+          path: plugin
 
-    - name: Find JAR file
-      id: findjar
-      run: echo "jar=$(ls -1 plugin/*.jar | head -1 | xargs basename)" >> $GITHUB_OUTPUT
+      - name: Find JAR file
+        id: findjar
+        run: echo "jar=$(ls -1 plugin/*.jar | head -1 | xargs basename)" >> $GITHUB_OUTPUT
 
-    - name: Publish to Modrinth
-      uses: cloudnode-pro/modrinth-publish@v2
-      with:
-        token: ${{ secrets.MODRINTH_TOKEN }}
-        project: teamdeathmatch
-        version: ${{ github.ref_name }}
-        files: ${{ steps.findjar.outputs.jar }}
-        
+      - name: Publish to Modrinth
+        uses: cloudnode-pro/modrinth-publish@v2
+        with:
+          token: ${{ secrets.MODRINTH_TOKEN }}
+          project: teamdeathmatch
+          version: ${{ github.ref_name }}
+          files: ${{ steps.findjar.outputs.jar }}
+
   github-release:
     runs-on: ubuntu-latest
     needs: build
