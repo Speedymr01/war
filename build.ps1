@@ -1,7 +1,6 @@
 # Build script for TeamDeathmatch plugin
-# Sets JAVA_HOME to Java 21 before building
+# Use JAVA_HOME provided by GitHub Actions
 
-$env:JAVA_HOME = "C:\Program Files\Java\jdk-21"
 mvn clean package
 
 if ($LASTEXITCODE -eq 0) {
