@@ -6,7 +6,7 @@ on:
       - "v*"
 
 jobs:
-  publish:
+  build:
     runs-on: windows-latest
 
     steps:
@@ -17,16 +17,32 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: 21
 
       - name: Build project
         run: pwsh ./build.ps1
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin
+          path: target/TeamDeathmatch-*.jar
+
+  publish:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: plugin
 
       - name: Publish to Modrinth
         uses: cloudnode-pro/modrinth-publish@v2
         with:
           token: ${{ secrets.MODRINTH_TOKEN }}
-          project-id: teamdeathmatch
+          project: teamdeathmatch
           version: ${{ github.ref_name }}
           files: |
-            target/TeamDeathmatch-*.jar
+            TeamDeathmatch-*.jar
