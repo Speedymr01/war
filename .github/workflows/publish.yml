@@ -44,7 +44,7 @@ jobs:
 
       - name: Find JAR file
         id: findjar
-        run: echo "jar=$(ls -1 plugin/*.jar | head -1 | xargs basename)" >> $GITHUB_OUTPUT
+        run: echo "jar=$(ls plugin/*.jar)" >> $GITHUB_OUTPUT
 
       - name: Publish to Modrinth
         uses: cloudnode-pro/modrinth-publish@v2
@@ -52,7 +52,8 @@ jobs:
           token: ${{ secrets.MODRINTH_TOKEN }}
           project: teamdeathmatch
           version: ${{ github.ref_name }}
-          files: ${{ steps.findjar.outputs.jar }}
+          files: |
+            ${{ steps.findjar.outputs.jar }}
 
   github-release:
     runs-on: ubuntu-latest
