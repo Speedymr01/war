@@ -35,10 +35,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
   
-    defaults:
-      run:
-        working-directory: plugin
-  
     steps:
       - name: Download artifact
         uses: actions/download-artifact@v4
@@ -46,9 +42,13 @@ jobs:
           name: plugin
           path: plugin
   
+      - name: Change to plugin directory
+        run: cd plugin
+        shell: bash
+  
       - name: Find JAR file
         id: findjar
-        run: echo "jar=$(ls *.jar)" >> $GITHUB_OUTPUT
+        run: echo "jar=$(ls plugin/*.jar)" >> $GITHUB_OUTPUT
   
       - name: Publish to Modrinth
         uses: cloudnode-pro/modrinth-publish@v2
@@ -57,7 +57,7 @@ jobs:
           project: teamdeathmatch
           version: ${{ github.ref_name }}
           files: |
-            plugin/${{ steps.findjar.outputs.jar }}
+            ${{ steps.findjar.outputs.jar }}
 
 
   github-release:
