@@ -20,7 +20,7 @@ jobs:
           java-version: 17
 
       - name: Build project
-        run: ./build.ps1
+        run: pwsh ./build.ps1
 
       - name: Publish to Modrinth
         uses: cloudnode-pro/modrinth-publish@v2
