@@ -28,6 +28,25 @@ jobs:
           name: plugin
           path: target/TeamDeathmatch-*.jar
 
+github-release:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: plugin
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          files: |
+            TeamDeathmatch-*.jar
+
+
   publish:
     runs-on: ubuntu-latest
     needs: build
