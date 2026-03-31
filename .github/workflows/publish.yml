@@ -41,6 +41,10 @@ jobs:
         with:
           name: plugin
 
+      - name: Find JAR file
+        id: findjar
+        run: echo "jar=$(ls plugin/*.jar)" >> $GITHUB_OUTPUT
+
       - name: Publish to Modrinth
         uses: cloudnode-pro/modrinth-publish@v2
         with:
@@ -48,7 +52,7 @@ jobs:
           project: teamdeathmatch
           version: ${{ github.ref_name }}
           files: |
-            plugin/*.jar
+            ${{ steps.findjar.outputs.jar }}
 
   github-release:
     runs-on: ubuntu-latest
@@ -59,6 +63,10 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: plugin
+
+      - name: Find JAR file
+        id: findjar
+        run: echo "jar=$(ls plugin/*.jar)" >> $GITHUB_OUTPUT
 
       - name: Delete existing release (if any)
         uses: dev-drprasad/delete-tag-and-release@v1.0
@@ -73,4 +81,4 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
           files: |
-            plugin/*.jar
+            ${{ steps.findjar.outputs.jar }}
