@@ -56,7 +56,7 @@ jobs:
           project: ${{ secrets.MODRINTH_SLUG }}
           version: ${{ github.ref_name }}
           files: plugin/${{ steps.findjar.outputs.jar }}
-          loaders: "spigot"
+          loaders: ["spigot"]
 
 
 
