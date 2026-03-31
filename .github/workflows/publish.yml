@@ -48,7 +48,9 @@ jobs:
   
       - name: Find JAR file
         id: findjar
+        run: cd plugin
         run: echo "jar=$(ls plugin/*.jar)" >> $GITHUB_OUTPUT
+        shell: bash
   
       - name: Publish to Modrinth
         uses: cloudnode-pro/modrinth-publish@v2
