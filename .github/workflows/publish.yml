@@ -53,7 +53,7 @@ jobs:
         uses: cloudnode-pro/modrinth-publish@v2
         with:
           token: ${{ secrets.MODRINTH_TOKEN }}
-          project: teamdeathmatch
+          project: ${{ secrets.MODRINTH_SLUG }}
           version: ${{ github.ref_name }}
           files: plugin/${{ steps.findjar.outputs.jar }}
 
