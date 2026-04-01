@@ -49,24 +49,23 @@ jobs:
           cd plugin
           echo "jar=$(ls *.jar | head -1)" >> $GITHUB_OUTPUT
       
-      - name: Modrinth Upload
-        uses: benwoo1110/modrinth-upload-action@v1.0.0
+      - name: Upload to Modrinth
+        uses: RubixDev/modrinth-upload@v1
         with:
-          api_token: ${{ secrets.MODRINTH_TOKEN }}
-          project_id: ${{ secrets.MODRINTH_SLUG }}
-          version_number: ${{ github.ref_name }}
-          files: plugin/${{ steps.findjar.outputs.jar }}
+          token: ${{ secrets.MODRINTH_TOKEN }}
+          file_path: plugin/${{ steps.findjar.outputs.jar }}
           name: ${{ github.ref_name }}
-          changelog: "" 
-          dependencies: "[]"
-          game_versions: |
-            1.21.11
-          version_type: release
-          loaders: |
-            paper
+          version: ${{ github.ref_name }}
+          changelog: ""
+          relations: ""
+          game_versions: 1.21.11
+          release_type: release
+          loaders: paper
           featured: false
-          status: listed
-          requested_status: listed
+          project_id: ${{ secrets.MODRINTH_SLUG }}
+          staging: false
+          new_project_body: ""
+
 
                 
 
